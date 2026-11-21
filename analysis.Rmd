@@ -1,0 +1,121 @@
+---
+title: An R Markdown document converted from "analysis.ipynb"
+output: html_document
+---
+
+# Randomised Control Trials
+
+## Analysing Beat-the-Blues Dataset with RCT
+
+### Installing necessary packages
+
+```{r}
+install.packages(c("HSAUR3", "lme4", "lmerTest", "broom.mixed", "gtsummary", "tidyverse", "knitr"))
+library(HSAUR3); library(tidyverse); library(lme4); library(lmerTest)
+library(broom.mixed); library(gtsummary); library(knitr)
+```
+
+### Loading and preparing data
+
+```{r}
+data("BtheB", package = "HSAUR3")
+bt <- BtheB %>% mutate(subject = factor(row_number()))
+visits <- c("bdi.2m", "bdi.3m", "bdi.5m", "bdi.8m")
+str(bt)
+```
+
+```{r}
+flow <- bt %>%
+  group_by(treatment) %>%
+  summarise(randomised = n(),
+            across(all_of(visits), ~ sum(!is.na(.x)), .names = "observed_{.col}"))
+kable(flow)
+```
+
+```{r}
+bt %>%
+  select(treatment, bdi.pre, drug, length) %>%
+  tbl_summary(by = treatment,
+              statistic = list(all_continuous() ~ "{mean} ({sd})"),
+              label = list(bdi.pre ~ "Baseline BDI", drug ~ "Antidepressant use",
+                           length ~ "Episode length")) %>%
+  add_overall() %>%
+  as_kable()
+```
+
+```{r}
+long <- bt %>%
+  pivot_longer(all_of(visits), names_to = "visit", values_to = "bdi") %>%
+  mutate(time = as.numeric(str_extract(visit, "\\d+")))
+```
+
+```{r}
+m1 <- lmer(bdi ~ bdi.pre + time + treatment + drug + length + (1 | subject),
+           data = long, REML = FALSE, na.action = na.omit)
+summary(m1)
+tidy(m1, effects = "fixed", conf.int = TRUE) %>% kable(digits = 2)
+
+# Intraclass correlation: share of variance between patients
+vc <- as.data.frame(VarCorr(m1))
+icc <- vc$vcov[1] / sum(vc$vcov); round(icc, 2)
+```
+
+```{r}
+m2 <- lmer(bdi ~ bdi.pre + time + treatment + drug + length + (time | subject),
+           data = long, REML = FALSE, na.action = na.omit)
+anova(m1, m2)
+```
+
+```{r}
+m3 <- lmer(bdi ~ bdi.pre + time * treatment + drug + length + (1 | subject),
+           data = long, REML = FALSE, na.action = na.omit)
+anova(m1, m3)
+tidy(m3, effects = "fixed", conf.int = TRUE) %>% kable(digits = 2)
+```
+
+```{r}
+par(mfrow = c(1, 2))
+qqnorm(resid(m1), main = "Residuals"); qqline(resid(m1))
+re <- ranef(m1)$subject[, 1]
+qqnorm(re, main = "Random intercepts"); qqline(re)
+```
+
+```{r}
+# Does dropout relate to arm or baseline severity?
+bt <- bt %>% mutate(dropped = if_any(all_of(visits), is.na))
+glm(dropped ~ treatment + bdi.pre, family = binomial, data = bt) %>%
+  tidy(exponentiate = TRUE, conf.int = TRUE) %>% kable(digits = 2)
+
+# Complete-case analysis: patients observed at every visit
+complete_ids <- bt %>% filter(!dropped) %>% pull(subject)
+m_cc <- lmer(bdi ~ bdi.pre + time + treatment + drug + length + (1 | subject),
+             data = filter(long, subject %in% complete_ids), REML = FALSE)
+
+bind_rows(
+  tidy(m1,   effects = "fixed", conf.int = TRUE) %>% mutate(analysis = "Mixed model, all data (MAR)"),
+  tidy(m_cc, effects = "fixed", conf.int = TRUE) %>% mutate(analysis = "Complete case (MCAR)")
+) %>%
+  filter(term == "treatmentBtheB") %>%
+  select(analysis, estimate, conf.low, conf.high, p.value) %>%
+  kable(digits = 2)
+```
+
+```{r}
+summ <- long %>%
+  filter(!is.na(bdi)) %>%
+  group_by(treatment, time) %>%
+  summarise(n = n(), mean = mean(bdi), se = sd(bdi) / sqrt(n), .groups = "drop")
+
+p <- ggplot(summ, aes(time, mean, colour = treatment)) +
+  geom_line(position = position_dodge(0.3)) +
+  geom_point(position = position_dodge(0.3)) +
+  geom_errorbar(aes(ymin = mean - 1.96 * se, ymax = mean + 1.96 * se),
+                width = 0.3, position = position_dodge(0.3)) +
+  scale_x_continuous(breaks = c(2, 3, 5, 8)) +
+  labs(x = "Months since randomisation", y = "Mean BDI (95% CI)", colour = "Arm",
+       title = "Beat the Blues: depression scores over follow-up") +
+  theme_minimal()
+p
+ggsave("bdi_over_time.png", p, width = 7, height = 4.5, dpi = 200)
+```
+
