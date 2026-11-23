@@ -37,16 +37,29 @@ Dropout increases over follow-up, so not every patient is observed at every visi
 
 ## Results
 
+Data: 100 patients randomised (48 TAU, 52 Beat the Blues); 97 contribute at least one follow-up score
+(280 observations). Follow-up falls from 97 at 2 months to 52 at 8 months.
+
 | Analysis | Treatment effect (BDI points, BtheB − TAU) | 95% CI | p |
 | --- | --- | --- | --- |
-| Primary: random-intercept mixed model | [ ] | [ ] | [ ] |
-| Complete case | [ ] | [ ] | [ ] |
+| Primary: random-intercept mixed model (all data, valid under MAR) | −2.33 | −5.64 to 0.99 | 0.17 |
+| Complete case (patients observed at every visit, needs MCAR) | −4.42 | −8.51 to −0.34 | 0.03 |
 
-- Random slope vs random intercept (likelihood ratio test): [ ]
-- Treatment × time interaction: [ ]
-- Intraclass correlation: [ ]
+- Random slope vs random intercept (likelihood ratio test): χ² = 0.45, df = 2, p = 0.80, so the simpler
+  random-intercept model is kept.
+- Treatment × time interaction: χ² = 2.80, df = 1, p = 0.094; no clear evidence that the effect changes
+  over follow-up.
+- Intraclass correlation: 0.66, so two thirds of the variation in BDI is between patients, which is why
+  the repeated measures cannot be treated as independent.
+- Dropout was not related to arm (OR 1.02, 95% CI 0.46 to 2.24) or baseline BDI (OR 1.01 per point).
+- Baseline: antidepressant use differed by chance between arms (29% TAU vs 58% BtheB), so it is
+  adjusted for in every model.
 
-The primary estimate reproduces the published value of −2.33 (Everitt & Hothorn, 2014). [Add a one-line conclusion.]
+The primary estimate reproduces the published value of −2.33 (Everitt & Hothorn, 2014). Beat the Blues
+lowered depression scores by about 2.3 points on average, but the confidence interval includes no
+effect. The complete-case analysis gives a larger, nominally significant effect, which shows how
+discarding patients who dropped out can overstate a treatment effect; the mixed model, which uses
+everyone's available data, is the more defensible primary analysis.
 
 ![Mean BDI over follow-up by arm](figures/bdi_over_time.png)
 
